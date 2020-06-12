@@ -203,6 +203,11 @@ public class GoogleFitManager implements
         googleSignInClient.signOut();
     }
 
+    public GoogleSignInAccount getGSA(){
+        GoogleSignInAccount gsa = GoogleSignIn.getAccountForScopes(mReactContext, new Scope(Scopes.FITNESS_ACTIVITY_READ));
+        return  gsa;
+    }
+
     public boolean isAuthorized() {
         if (mApiClient != null && mApiClient.isConnected()) {
             return true;

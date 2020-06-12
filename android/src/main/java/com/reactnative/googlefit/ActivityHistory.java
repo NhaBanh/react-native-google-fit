@@ -74,74 +74,55 @@ public class ActivityHistory {
         this.googleFitManager = googleFitManager;
     }
 
-    public ReadableArray getActivitySamples(long startTime, long endTime) {
-        WritableArray results = Arguments.createArray();
+    public void getActivitySamples(long startTime, long endTime, final Callback successCallback) {
         DataReadRequest readRequest = new DataReadRequest.Builder()
-                .aggregate(DataType.TYPE_STEP_COUNT_DELTA, DataType.AGGREGATE_STEP_COUNT_DELTA)
-                .aggregate(DataType.TYPE_CALORIES_EXPENDED, DataType.AGGREGATE_CALORIES_EXPENDED)
-                .aggregate(DataType.TYPE_DISTANCE_DELTA, DataType.AGGREGATE_DISTANCE_DELTA)
-                .bucketByActivitySegment(1, TimeUnit.SECONDS)
+                .aggregate(DataType.TYPE_MOVE_MINUTES, DataType.AGGREGATE_MOVE_MINUTES)
+                .bucketByTime(1, TimeUnit.DAYS)
                 .setTimeRange(startTime, endTime, TimeUnit.MILLISECONDS)
                 .build();
 
-        DataReadResult dataReadResult = Fitness.HistoryApi.readData(googleFitManager.getGoogleApiClient(), readRequest).await(1, TimeUnit.MINUTES);
+        Fitness.getHistoryClient(mReactContext, googleFitManager.getGSA())
+                .readData(readRequest)
+                .addOnSuccessListener(new OnSuccessListener<DataReadResponse>() {
+                    @Override
+                    public void onSuccess(DataReadResponse dataReadResponse) {
+                        WritableMap map = Arguments.createMap();
+                        if(dataReadResponse.getBuckets().size()>0){
+                            for (Bucket bucket: dataReadResponse.getBuckets() ) {
+                                for (DataSet dataset: bucket.getDataSets()) {
+                                    for (DataPoint dp : dataset.getDataPoints()) {
+                                        for (Field f: dp.getDataType().getFields()) {
+                                            Log.i(TAG, "Field: "+ f.getName() + " Value: " + dp.getValue(f));
+                                            map.putString("moveMins", dp.getValue(f).toString());
+                                        }
+                                    }
+                                }
+                            }
+                        }else if(dataReadResponse.getDataSets().size() > 0){
+                            for (DataSet dataset: dataReadResponse.getDataSets()) {
+                                for (DataPoint dp : dataset.getDataPoints()) {
+                                    for (Field f: dp.getDataType().getFields()) {
+                                        Log.i(TAG, "Field: "+ f.getName() + " Value: " + dp.getValue(f));
+                                        map.putString("moveMins", dp.getValue(f).toString());
+                                    }
+                                }
+                            }
+                        }
+                        WritableArray results = Arguments.createArray();
+                        results.pushMap(map);
+                        successCallback.invoke(results);
 
-        List<Bucket> buckets = dataReadResult.getBuckets();
-        for (Bucket bucket : buckets) {
-            String activityName = bucket.getActivity();
-            int activityType = bucket.getBucketType();
-            if (!bucket.getDataSets().isEmpty()) {
-                long start = bucket.getStartTime(TimeUnit.MILLISECONDS);
-                long end = bucket.getEndTime(TimeUnit.MILLISECONDS);
-                Date startDate = new Date(start);
-                Date endDate = new Date(end);
-                WritableMap map = Arguments.createMap();
-                map.putDouble("start",start);
-                map.putDouble("end",end);
-                map.putString("activityName", activityName);
-                String deviceName = "";
-                String sourceId = "";
-                boolean isTracked = true;
-                for (DataSet dataSet : bucket.getDataSets()) {
-                    for (DataPoint dataPoint : dataSet.getDataPoints()) {
-                        try {
-                            int deviceType = dataPoint.getOriginalDataSource().getDevice().getType();
-                            if (deviceType == TYPE_WATCH) {
-                                deviceName = "Android Wear";
-                            } else {
-                                deviceName = "Android";
-                            }
-                        } catch (Exception e) {
-                        }
-                        sourceId = dataPoint.getOriginalDataSource().getAppPackageName();
-                        if (startDate.getTime() % 1000 == 0 && endDate.getTime() % 1000 == 0) {
-                            isTracked = false;
-                        }
-                        for (Field field : dataPoint.getDataType().getFields()) {
-                            String fieldName = field.getName();
-                            switch (fieldName) {
-                                case STEPS_FIELD_NAME:
-                                    map.putInt("quantity", dataPoint.getValue(field).asInt());
-                                    break;
-                                case DISTANCE_FIELD_NAME:
-                                    map.putDouble(fieldName, dataPoint.getValue(field).asFloat());
-                                    break;
-                                case CALORIES_FIELD_NAME:
-                                    map.putDouble(fieldName, dataPoint.getValue(field).asFloat());
-                                default:
-                                    Log.w(TAG, "don't specified and handled: " + fieldName);
-                            }
-                        }
                     }
-                }
-                map.putString("device", deviceName);
-                map.putString("sourceName", deviceName);
-                map.putString("sourceId", sourceId);
-                map.putBoolean("tracked", isTracked);
-                results.pushMap(map);
-            }
-        }
-        
-        return results;
+                })
+                .addOnFailureListener(new OnFailureListener() {
+                    @Override
+                    public void onFailure(@NonNull Exception e) {
+                        WritableArray results = Arguments.createArray();
+                        successCallback.invoke(results);
+                        Log.e(TAG, "There was a problem reading the data.", e);
+                    }
+                });
+
+
     }
 }
